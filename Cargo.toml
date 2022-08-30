@@ -14,7 +14,7 @@ tokio = { version = "1.20.1", features = ["rt", "rt-multi-thread", "macros"] }
 tower = "0.4.13"
 tower-http = { version = "0.3.4", features = ["trace"] }
 trace = "0.1.6"
-privacypass = { path="../../privacypass/privacypass"}
+privacypass = { git = "https://github.com/raphaelrobert/privacypass" }
 async-trait = "0.1.57"
 base64 = "0.13.0"
 

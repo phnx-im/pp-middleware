@@ -8,7 +8,7 @@ use privacypass::{
     Nonce, NonceStore, Serialize,
 };
 
-pub(crate) struct PrivacyPassState {
+pub struct PrivacyPassState {
     key_store: MemoryKeyStore,
     nonce_store: MemoryNonceStore,
     server: Mutex<Server>,
@@ -16,7 +16,7 @@ pub(crate) struct PrivacyPassState {
 }
 
 impl PrivacyPassState {
-    pub(crate) async fn new() -> Self {
+    pub async fn new() -> Self {
         let mut server = Server::new();
         let mut key_store = MemoryKeyStore::default();
         let public_key = server.create_keypair(&mut key_store).await.unwrap();

@@ -23,7 +23,7 @@ use tower::{Layer, Service};
 use crate::state::PrivacyPassState;
 
 #[derive(Clone)]
-pub(crate) struct PrivacyPassLayer {
+pub struct PrivacyPassLayer {
     privacy_pass_state: Arc<PrivacyPassState>,
 }
 
@@ -45,7 +45,7 @@ impl<S> Layer<S> for PrivacyPassLayer {
 }
 
 #[derive(Clone)]
-pub(crate) struct PrivacyPassMiddleware<S> {
+pub struct PrivacyPassMiddleware<S> {
     inner: S,
     state: Arc<PrivacyPassState>,
 }
@@ -112,7 +112,7 @@ pub(crate) fn challenge(uri: &Uri) -> TokenChallenge {
     )
 }
 
-pub(crate) async fn issue_token(
+pub async fn issue_token(
     body: Bytes,
     headers: HeaderMap,
     Extension(privacy_pass_state): Extension<Arc<PrivacyPassState>>,
