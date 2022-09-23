@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2022 Phoenix R&D <hello@phnx.im>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use async_trait::async_trait;
 use privacypass::{batched_tokens::server::Server, TokenKeyId};
 use std::collections::{HashMap, HashSet};
