@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 Phoenix R&D GmbH <hello@phnx.im>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use actix_web::{
     http::{self, header::HeaderValue, StatusCode},
     rt, web, App, HttpResponse, HttpServer, Responder,
