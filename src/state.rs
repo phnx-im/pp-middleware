@@ -3,47 +3,48 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use async_trait::async_trait;
-use privacypass::{batched_tokens::server::Server, TokenKeyId};
-use std::collections::{HashMap, HashSet};
+use privacypass::batched_tokens::server::Server;
+
 use tokio::sync::Mutex;
 
 use privacypass::{
     batched_tokens::{server::*, *},
-    Nonce, NonceStore, Serialize,
+    NonceStore, Serialize,
 };
 
-pub struct PrivacyPassState {
-    key_store: MemoryKeyStore,
-    nonce_store: MemoryNonceStore,
-    server: Mutex<Server>,
-    public_key: PublicKey,
-}
+/// This is a trait that provides a set of methods for issuing and redeeming
+/// privacy-pass tokens. The trait has two generic parameters: KS and NS. KS is
+/// a type parameter that is used to specify the type of keystore used to store
+/// key pairs, while NS is a type parameter that is used to specify the type
+/// of nonce store used to store nonces.
+#[async_trait]
+pub trait PrivacyPassProvider<KS, NS>
+where
+    KS: KeyStore + Send + Sync + 'static,
+    NS: NonceStore + Send + Sync + 'static,
+{
+    /// This method returns a reference to the public key of the server.
+    fn public_key(&self) -> &PublicKey;
 
-impl PrivacyPassState {
-    pub async fn new() -> Self {
-        let mut server = Server::new();
-        let mut key_store = MemoryKeyStore::default();
-        let public_key = server.create_keypair(&mut key_store).await.unwrap();
+    /// This method returns a reference to the server.
+    fn server(&self) -> &Mutex<Server>;
 
-        Self {
-            key_store,
-            nonce_store: MemoryNonceStore::default(),
-            server: Mutex::new(server),
-            public_key,
-        }
-    }
+    /// This method returns a reference to the keystore.
+    fn key_store(&self) -> &KS;
 
-    pub(crate) fn public_key(&self) -> &PublicKey {
-        &self.public_key
-    }
+    /// This method returns a reference to the nonce store.
+    fn nonce_store(&self) -> &NS;
 
-    pub(crate) async fn issue_token_response(
+    /// This method is used to issue a token response to a token request.
+    async fn issue_token_response(
         &self,
         token_request: TokenRequest,
     ) -> Result<Vec<u8>, IssueTokenResponseError> {
-        let mut server = self.server.lock().await;
+        let server = self.server().lock();
+        let ks = self.key_store();
         let token_response = server
-            .issue_token_response(&self.key_store, token_request)
+            .await
+            .issue_token_response(ks, token_request)
             .await
             .unwrap();
         token_response
@@ -51,46 +52,63 @@ impl PrivacyPassState {
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)
     }
 
-    pub(crate) async fn redeem_token(&self, token: BatchedToken) -> bool {
-        let server = self.server.lock().await;
-        server
-            .redeem_token(&self.key_store, &self.nonce_store, token.clone())
-            .await
-            .is_ok()
+    /// This method is used to redeem a token.
+    async fn redeem_token(&self, token: BatchedToken) -> bool {
+        let server = self.server().lock().await;
+        let ks = self.key_store();
+        let ns = self.nonce_store();
+        server.redeem_token(ks, ns, token.clone()).await.is_ok()
     }
 }
 
-#[derive(Default)]
-pub struct MemoryNonceStore {
-    nonces: Mutex<HashSet<Nonce>>,
-}
-
-#[async_trait]
-impl NonceStore for MemoryNonceStore {
-    async fn exists(&self, nonce: &Nonce) -> bool {
-        let nonces = self.nonces.lock().await;
-        nonces.contains(nonce)
-    }
-
-    async fn insert(&self, nonce: Nonce) {
-        let mut nonces = self.nonces.lock().await;
-        nonces.insert(nonce);
-    }
-}
-
-#[derive(Default)]
-pub struct MemoryKeyStore {
-    keys: Mutex<HashMap<TokenKeyId, VoprfServer<Ristretto255>>>,
+/// This is a struct that implements the PrivacyPassProvider trait. It is used
+/// to store the state of the server.
+pub struct PrivacyPassState<KS, NS> {
+    key_store: KS,
+    nonce_store: NS,
+    server: Mutex<Server>,
+    public_key: PublicKey,
 }
 
 #[async_trait]
-impl KeyStore for MemoryKeyStore {
-    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<Ristretto255>) {
-        let mut keys = self.keys.lock().await;
-        keys.insert(token_key_id, server);
+impl<KS, NS> PrivacyPassProvider<KS, NS> for PrivacyPassState<KS, NS>
+where
+    KS: KeyStore + 'static,
+    NS: NonceStore + 'static,
+{
+    fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 
-    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<Ristretto255>> {
-        self.keys.lock().await.get(token_key_id).cloned()
+    fn server(&self) -> &Mutex<Server> {
+        &self.server
+    }
+
+    fn key_store(&self) -> &KS {
+        &self.key_store
+    }
+
+    fn nonce_store(&self) -> &NS {
+        &self.nonce_store
+    }
+}
+
+impl<KS, NS> PrivacyPassState<KS, NS>
+where
+    KS: KeyStore + Default + 'static,
+    NS: NonceStore + Default + 'static,
+{
+    /// This method is used to create a new instance of the PrivacyPassState
+    /// struct. It takes a key store and a nonce store as parameters.
+    pub async fn new(mut ks: KS, ns: NS) -> Self {
+        let mut server = Server::new();
+        let public_key = server.create_keypair(&mut ks).await.unwrap();
+
+        Self {
+            key_store: ks,
+            nonce_store: ns,
+            server: Mutex::new(server),
+            public_key,
+        }
     }
 }
