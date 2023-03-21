@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022 Phoenix R&D <hello@phnx.im>
+// SPDX-FileCopyrightText: 2022 Phoenix R&D GmbH <hello@phnx.im>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -15,8 +15,11 @@ use privacypass::{
         authenticate::{build_www_authenticate_header, TokenChallenge},
         authorize::parse_authorization_header,
     },
-    batched_tokens::{server::serialize_public_key, TokenRequest},
-    Deserialize,
+    batched_tokens::{
+        server::{serialize_public_key, KeyStore},
+        TokenRequest,
+    },
+    Deserialize, NonceStore,
 };
 use std::{
     sync::Arc,
@@ -24,21 +27,21 @@ use std::{
 };
 use tower::{Layer, Service};
 
-use crate::state::PrivacyPassState;
+use crate::state::{PrivacyPassProvider, PrivacyPassState};
 
 #[derive(Clone)]
-pub struct PrivacyPassLayer {
-    privacy_pass_state: Arc<PrivacyPassState>,
+pub struct PrivacyPassLayer<KS, NS> {
+    privacy_pass_state: Arc<PrivacyPassState<KS, NS>>,
 }
 
-impl PrivacyPassLayer {
-    pub fn new(privacy_pass_state: Arc<PrivacyPassState>) -> Self {
+impl<KS, NS> PrivacyPassLayer<KS, NS> {
+    pub fn new(privacy_pass_state: Arc<PrivacyPassState<KS, NS>>) -> Self {
         Self { privacy_pass_state }
     }
 }
 
-impl<S> Layer<S> for PrivacyPassLayer {
-    type Service = PrivacyPassMiddleware<S>;
+impl<S, KS, NS> Layer<S> for PrivacyPassLayer<KS, NS> {
+    type Service = PrivacyPassMiddleware<S, KS, NS>;
 
     fn layer(&self, inner: S) -> Self::Service {
         PrivacyPassMiddleware {
@@ -49,15 +52,17 @@ impl<S> Layer<S> for PrivacyPassLayer {
 }
 
 #[derive(Clone)]
-pub struct PrivacyPassMiddleware<S> {
+pub struct PrivacyPassMiddleware<S, KS, NS> {
     inner: S,
-    state: Arc<PrivacyPassState>,
+    state: Arc<PrivacyPassState<KS, NS>>,
 }
 
-impl<S> Service<Request<Body>> for PrivacyPassMiddleware<S>
+impl<S, KS, NS> Service<Request<Body>> for PrivacyPassMiddleware<S, KS, NS>
 where
     S: Service<Request<Body>, Response = Response> + Clone + Send + 'static,
     S::Future: Send + 'static,
+    KS: KeyStore + Sync + Send + 'static,
+    NS: NonceStore + Sync + Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -116,10 +121,13 @@ pub(crate) fn challenge(uri: &Uri) -> TokenChallenge {
     )
 }
 
-pub async fn issue_token(
-    body: Bytes,
+pub async fn issue_token<
+    KS: KeyStore + Send + Sync + 'static,
+    NS: NonceStore + Send + Sync + 'static,
+>(
+    Extension(privacy_pass_state): Extension<Arc<PrivacyPassState<KS, NS>>>,
     headers: HeaderMap,
-    Extension(privacy_pass_state): Extension<Arc<PrivacyPassState>>,
+    body: Bytes,
 ) -> Response {
     // Expect a specific content type
     let content_type = headers.get(http::header::CONTENT_TYPE);
