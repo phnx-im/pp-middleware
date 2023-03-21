@@ -153,7 +153,6 @@ pub(crate) fn challenge(uri: &http::Uri) -> TokenChallenge {
     )
 }
 
-//#[post("/issuer")]
 pub async fn issue_token<
     KS: KeyStore + Send + Sync + 'static,
     NS: NonceStore + Send + Sync + 'static,

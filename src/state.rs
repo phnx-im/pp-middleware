@@ -46,7 +46,7 @@ where
             .await
             .issue_token_response(ks, token_request)
             .await
-            .unwrap();
+            .map_err(|_| IssueTokenResponseError::KeyIdNotFound)?;
         token_response
             .tls_serialize_detached()
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)
