@@ -87,7 +87,7 @@ async fn full_cycle_axum() {
     // Instantiate the Privacy Pass client
     let public_key = deserialize_public_key(challenge.token_key()).unwrap();
 
-    let mut client = privacypass::batched_tokens::client::Client::new(public_key);
+    let client = privacypass::batched_tokens::client::Client::new(public_key);
 
     assert_eq!(challenge.max_age(), None);
 
@@ -117,8 +117,8 @@ async fn full_cycle_axum() {
     let token_response = TokenResponse::try_from_bytes(&token_response_bytes).unwrap();
 
     // Generate the tokens
-    let tokens = client.issue_token(&token_response, &token_states).unwrap();
-    assert_eq!(tokens.len(), nr);
+    let tokens = client.issue_tokens(&token_response, &token_states).unwrap();
+    assert_eq!(tokens.len(), nr as usize);
 
     // Redeem a token
     let (header_name, header_value) = build_authorization_header(&tokens[0]).unwrap();

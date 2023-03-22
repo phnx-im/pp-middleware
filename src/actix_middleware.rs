@@ -25,7 +25,7 @@ use privacypass::{
         authorize::parse_authorization_header,
     },
     batched_tokens::{
-        server::{serialize_public_key, KeyStore},
+        server::{serialize_public_key, BatchedKeyStore},
         TokenRequest,
     },
     Deserialize, NonceStore,
@@ -58,7 +58,7 @@ where
     S::Future: 'static,
     B: 'static,
     Response<B>: From<HttpResponse>,
-    KS: KeyStore + Sync + Send + 'static,
+    KS: BatchedKeyStore + Sync + Send + 'static,
     NS: NonceStore + Sync + Send + 'static,
 {
     type Response = ServiceResponse<B>;
@@ -86,7 +86,7 @@ where
     S::Future: 'static,
     B: 'static,
     Response<B>: From<HttpResponse>,
-    KS: KeyStore + Sync + Send + 'static,
+    KS: BatchedKeyStore + Sync + Send + 'static,
     NS: NonceStore + Sync + Send + 'static,
 {
     type Response = ServiceResponse<B>;
@@ -154,7 +154,7 @@ pub(crate) fn challenge(uri: &http::Uri) -> TokenChallenge {
 }
 
 pub async fn issue_token<
-    KS: KeyStore + Send + Sync + 'static,
+    KS: BatchedKeyStore + Send + Sync + 'static,
     NS: NonceStore + Send + Sync + 'static,
 >(
     body: Bytes,
