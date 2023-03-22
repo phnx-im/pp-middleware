@@ -100,6 +100,13 @@ where
 {
     /// This method is used to create a new instance of the PrivacyPassState
     /// struct. It takes a key store and a nonce store as parameters.
+    ///
+    /// It creates a key pair and stores it in the key store. The public key is
+    /// exposed and can be used to extract the private key from the store.
+    ///
+    /// While the key store can handle multiple keys, this state object is
+    /// specific to one key, and a new state object should be created for each
+    /// key.
     pub async fn new(mut ks: KS, ns: NS) -> Self {
         let mut server = Server::new();
         let public_key = server.create_keypair(&mut ks).await.unwrap();
