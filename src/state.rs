@@ -20,7 +20,7 @@ use privacypass::{
 #[async_trait]
 pub trait PrivacyPassProvider<KS, NS>
 where
-    KS: KeyStore + Send + Sync + 'static,
+    KS: BatchedKeyStore + Send + Sync + 'static,
     NS: NonceStore + Send + Sync + 'static,
 {
     /// This method returns a reference to the public key of the server.
@@ -73,7 +73,7 @@ pub struct PrivacyPassState<KS, NS> {
 #[async_trait]
 impl<KS, NS> PrivacyPassProvider<KS, NS> for PrivacyPassState<KS, NS>
 where
-    KS: KeyStore + 'static,
+    KS: BatchedKeyStore + 'static,
     NS: NonceStore + 'static,
 {
     fn public_key(&self) -> &PublicKey {
@@ -95,7 +95,7 @@ where
 
 impl<KS, NS> PrivacyPassState<KS, NS>
 where
-    KS: KeyStore + Default + 'static,
+    KS: BatchedKeyStore + Default + 'static,
     NS: NonceStore + Default + 'static,
 {
     /// This method is used to create a new instance of the PrivacyPassState
@@ -107,9 +107,9 @@ where
     /// While the key store can handle multiple keys, this state object is
     /// specific to one key, and a new state object should be created for each
     /// key.
-    pub async fn new(mut ks: KS, ns: NS) -> Self {
-        let mut server = Server::new();
-        let public_key = server.create_keypair(&mut ks).await.unwrap();
+    pub async fn new(ks: KS, ns: NS) -> Self {
+        let server = Server::new();
+        let public_key = server.create_keypair(&ks).await.unwrap();
 
         Self {
             key_store: ks,
