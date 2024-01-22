@@ -11,19 +11,20 @@ license = "AGPL-3.0-or-later"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-axum = "0.6"
+axum = "0.7.4"
 features = "0.10.0"
-futures = "0.3.23"
-hyper = "0.14.20"
+futures = "0.3"
+hyper = "1"
 tokio = { version = "1.20.1", features = ["rt", "rt-multi-thread", "macros"] }
 tower = "0.4.13"
-tower-http = { version = "0.4", features = ["trace"] }
-trace = "0.1.6"
+tower-http = { version = "0.5", features = ["trace"] }
+trace = "0.1"
 privacypass = { git = "https://github.com/raphaelrobert/privacypass" }
-async-trait = "0.1.57"
-base64 = "0.21.0"
-actix-web = "4.2.1"
+async-trait = "0.1"
+base64 = "0.21"
+actix-web = "4.4"
 futures-util = "0.3.24"
+http = "1"
 
 [dev-dependencies]
-reqwest = "0.11.11"
+reqwest = "0.11"

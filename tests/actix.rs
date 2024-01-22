@@ -15,6 +15,7 @@ use privacypass_middleware::{
     actix_middleware::*,
     memory_stores::{MemoryKeyStore, MemoryNonceStore},
     state::PrivacyPassState,
+    utils::{header_name_to_http02, header_value_to_http02, header_value_to_http10},
 };
 use std::{sync::Arc, thread};
 
@@ -79,7 +80,7 @@ async fn full_cycle_actix() {
 
     // Extract token challenge from header
     let header_name = http::header::WWW_AUTHENTICATE;
-    let header_value = res.headers().get(header_name).unwrap().clone();
+    let header_value = header_value_to_http10(res.headers().get(header_name).unwrap().clone());
 
     assert_eq!(res.bytes().await.unwrap().len(), 0);
 
@@ -127,6 +128,9 @@ async fn full_cycle_actix() {
 
     // Redeem a token
     let (header_name, header_value) = build_authorization_header(&tokens[0]).unwrap();
+
+    let header_name = header_name_to_http02(header_name);
+    let header_value = header_value_to_http02(header_value);
 
     let res = http_client
         .get("http://localhost:3001/origin")

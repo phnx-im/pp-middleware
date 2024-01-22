@@ -6,7 +6,6 @@ use actix_web::{
     dev::{forward_ready, Response, Service, ServiceRequest, ServiceResponse, Transform},
     error::{ErrorInternalServerError, ErrorUnauthorized},
     http::{
-        self,
         header::{self, HeaderValue},
         StatusCode,
     },
@@ -31,7 +30,10 @@ use privacypass::{
     Deserialize, NonceStore,
 };
 
-use crate::state::{PrivacyPassProvider, PrivacyPassState};
+use crate::{
+    state::{PrivacyPassProvider, PrivacyPassState},
+    utils::{header_name_to_http02, header_value_to_http02, header_value_to_http10, uri_to_http10},
+};
 
 // There are two steps in middleware processing.
 // 1. Middleware initialization, middleware factory gets called with
@@ -103,8 +105,9 @@ where
         let authorization = req.headers_mut().remove(header::AUTHORIZATION).next();
 
         // Deserialize the token from the authorization header.
-        let token_option =
-            authorization.and_then(|header_value| parse_authorization_header(&header_value).ok());
+        let token_option = authorization.and_then(|header_value| {
+            parse_authorization_header(&header_value_to_http10(header_value)).ok()
+        });
 
         // If the token is present, then authenticate the token.
         if let Some(token) = token_option {
@@ -123,11 +126,17 @@ where
             // If the token is not present, then issue a challenge.
             let public_key = state.public_key();
             let token_key = serialize_public_key(*public_key);
-            let build_res =
-                build_www_authenticate_header(&challenge(req.request().uri()), &token_key, None);
+            let build_res = build_www_authenticate_header(
+                &challenge(&uri_to_http10(req.request().uri())),
+                &token_key,
+                None,
+            );
             if let Ok((header_name, header_value)) = build_res {
                 let response = HttpResponse::build(StatusCode::OK)
-                    .append_header((header_name, header_value))
+                    .append_header((
+                        header_name_to_http02(header_name),
+                        header_value_to_http02(header_value),
+                    ))
                     .finish();
 
                 let sr: ServiceResponse<B> = req.into_response(response);
