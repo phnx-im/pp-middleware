@@ -2,20 +2,26 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use axum::http::{self, HeaderValue};
 use axum::{
     routing::{get, post},
     Extension, Router,
 };
-use hyper::StatusCode;
 use privacypass::{
     auth::{authenticate::parse_www_authenticate_header, authorize::build_authorization_header},
     batched_tokens::{server::*, TokenResponse},
     Serialize,
 };
-use privacypass_middleware::memory_stores::{MemoryKeyStore, MemoryNonceStore};
-use privacypass_middleware::{axum_middleware::*, state::PrivacyPassState};
-use std::{net::SocketAddr, sync::Arc};
+use privacypass_middleware::{
+    axum_middleware::*,
+    memory_stores::{MemoryKeyStore, MemoryNonceStore},
+    state::PrivacyPassState,
+    utils::{header_name_to_http02, header_value_to_http02, header_value_to_http10},
+};
+use reqwest::{
+    header::{HeaderValue, CONTENT_TYPE},
+    StatusCode,
+};
+use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
 /// Sample server using axum. The server exposes two endpoints:
@@ -38,11 +44,10 @@ async fn run_server() {
         .route_layer(Extension(privacy_pass_state.clone()))
         .layer(TraceLayer::new_for_http());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
 
 /// Origin endpoint
@@ -73,8 +78,8 @@ async fn full_cycle_axum() {
     assert_eq!(res.status(), StatusCode::OK);
 
     // Extract token challenge from header
-    let header_name = http::header::WWW_AUTHENTICATE;
-    let header_value = res.headers().get(header_name).unwrap().clone();
+    let header_name = reqwest::header::WWW_AUTHENTICATE;
+    let header_value = header_value_to_http10(res.headers().get(header_name).unwrap().clone());
 
     assert_eq!(res.bytes().await.unwrap().len(), 0);
 
@@ -98,7 +103,7 @@ async fn full_cycle_axum() {
     let res = http_client
         .post("http://localhost:3000/issuer")
         .header(
-            http::header::CONTENT_TYPE,
+            CONTENT_TYPE,
             HeaderValue::from_static("message/token-request"),
         )
         .body(token_request.tls_serialize_detached().unwrap())
@@ -108,7 +113,7 @@ async fn full_cycle_axum() {
 
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(
-        res.headers().get(http::header::CONTENT_TYPE).unwrap(),
+        res.headers().get(reqwest::header::CONTENT_TYPE).unwrap(),
         HeaderValue::from_static("message/token-response")
     );
 
@@ -122,6 +127,9 @@ async fn full_cycle_axum() {
 
     // Redeem a token
     let (header_name, header_value) = build_authorization_header(&tokens[0]).unwrap();
+
+    let header_name = header_name_to_http02(header_name);
+    let header_value = header_value_to_http02(header_value);
 
     let res = http_client
         .get("http://localhost:3000/origin")
