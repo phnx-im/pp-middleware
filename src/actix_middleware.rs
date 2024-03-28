@@ -23,7 +23,7 @@ use privacypass::{
         authenticate::{build_www_authenticate_header, TokenChallenge},
         authorize::parse_authorization_header,
     },
-    batched_tokens::{
+    batched_tokens_ristretto255::{
         server::{serialize_public_key, BatchedKeyStore},
         TokenRequest,
     },
@@ -155,7 +155,7 @@ where
 
 pub(crate) fn challenge(uri: &http::Uri) -> TokenChallenge {
     TokenChallenge::new(
-        privacypass::TokenType::Batched,
+        privacypass::TokenType::BatchedTokenRistretto255,
         &uri.to_string(),
         None,
         &[uri.to_string()],

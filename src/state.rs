@@ -3,12 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use async_trait::async_trait;
-use privacypass::batched_tokens::server::Server;
+use privacypass::batched_tokens_ristretto255::server::Server;
 
 use tokio::sync::Mutex;
 
 use privacypass::{
-    batched_tokens::{server::*, *},
+    batched_tokens_ristretto255::{server::*, *},
     NonceStore, Serialize,
 };
 
