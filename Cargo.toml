@@ -21,10 +21,10 @@ tower-http = { version = "0.5", features = ["trace"] }
 trace = "0.1"
 privacypass = { git = "https://github.com/raphaelrobert/privacypass" }
 async-trait = "0.1"
-base64 = "0.21"
+base64 = "0.22"
 actix-web = "4.4"
 futures-util = "0.3.24"
 http = "1"
 
 [dev-dependencies]
-reqwest = "0.11"
+reqwest = "0.12"

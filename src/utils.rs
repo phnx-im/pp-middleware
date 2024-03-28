@@ -7,30 +7,24 @@
 
 use std::str::FromStr;
 
-pub fn header_name_to_http10(
-    header_name: actix_web::http::header::HeaderName,
-) -> http::header::HeaderName {
-    http::header::HeaderName::from_str(header_name.as_str()).unwrap()
-}
-
-pub fn header_value_to_http10(
+pub(crate) fn header_value_to_http10(
     header_value: actix_web::http::header::HeaderValue,
 ) -> http::header::HeaderValue {
     http::header::HeaderValue::from_str(header_value.to_str().unwrap()).unwrap()
 }
 
-pub fn header_name_to_http02(
+pub(crate) fn header_name_to_http02(
     header_name: http::header::HeaderName,
 ) -> actix_web::http::header::HeaderName {
     actix_web::http::header::HeaderName::from_str(header_name.as_str()).unwrap()
 }
 
-pub fn header_value_to_http02(
+pub(crate) fn header_value_to_http02(
     header_value: http::header::HeaderValue,
 ) -> actix_web::http::header::HeaderValue {
     actix_web::http::header::HeaderValue::from_str(header_value.to_str().unwrap()).unwrap()
 }
 
-pub fn uri_to_http10(uri: &actix_web::http::Uri) -> http::Uri {
+pub(crate) fn uri_to_http10(uri: &actix_web::http::Uri) -> http::Uri {
     http::Uri::from_str(uri.to_string().as_str()).unwrap()
 }

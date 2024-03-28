@@ -2,20 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use actix_web::{
-    http::{self, header::HeaderValue, StatusCode},
-    rt, web, App, HttpResponse, HttpServer, Responder,
-};
+use actix_web::{rt, web, App, HttpResponse, HttpServer, Responder};
+use http::{HeaderValue, StatusCode};
 use privacypass::{
     auth::{authenticate::parse_www_authenticate_header, authorize::build_authorization_header},
-    batched_tokens::{server::*, TokenResponse},
+    batched_tokens_ristretto255::{server::*, TokenResponse},
     Serialize,
 };
 use privacypass_middleware::{
     actix_middleware::*,
     memory_stores::{MemoryKeyStore, MemoryNonceStore},
     state::PrivacyPassState,
-    utils::{header_name_to_http02, header_value_to_http02, header_value_to_http10},
 };
 use std::{sync::Arc, thread};
 
@@ -80,7 +77,7 @@ async fn full_cycle_actix() {
 
     // Extract token challenge from header
     let header_name = http::header::WWW_AUTHENTICATE;
-    let header_value = header_value_to_http10(res.headers().get(header_name).unwrap().clone());
+    let header_value = res.headers().get(header_name).unwrap().clone();
 
     assert_eq!(res.bytes().await.unwrap().len(), 0);
 
@@ -93,7 +90,7 @@ async fn full_cycle_actix() {
     // Instantiate the Privacy Pass client
     let public_key = deserialize_public_key(challenge.token_key()).unwrap();
 
-    let client = privacypass::batched_tokens::client::Client::new(public_key);
+    let client = privacypass::batched_tokens_ristretto255::client::Client::new(public_key);
 
     assert_eq!(challenge.max_age(), None);
 
@@ -128,9 +125,6 @@ async fn full_cycle_actix() {
 
     // Redeem a token
     let (header_name, header_value) = build_authorization_header(&tokens[0]).unwrap();
-
-    let header_name = header_name_to_http02(header_name);
-    let header_value = header_value_to_http02(header_value);
 
     let res = http_client
         .get("http://localhost:3001/origin")

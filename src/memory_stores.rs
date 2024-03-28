@@ -11,7 +11,7 @@ use std::{
 use tokio::sync::Mutex;
 
 use privacypass::{
-    batched_tokens::{server::*, *},
+    batched_tokens_ristretto255::{server::*, *},
     Nonce, NonceStore,
 };
 
