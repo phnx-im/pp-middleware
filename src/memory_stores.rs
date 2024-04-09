@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use async_trait::async_trait;
-use privacypass::TokenKeyId;
+use privacypass::TruncatedTokenKeyId;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -35,17 +35,17 @@ impl NonceStore for MemoryNonceStore {
 
 #[derive(Default, Clone)]
 pub struct MemoryKeyStore {
-    keys: Arc<Mutex<HashMap<TokenKeyId, VoprfServer<Ristretto255>>>>,
+    keys: Arc<Mutex<HashMap<TruncatedTokenKeyId, VoprfServer<Ristretto255>>>>,
 }
 
 #[async_trait]
 impl BatchedKeyStore for MemoryKeyStore {
-    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<Ristretto255>) {
+    async fn insert(&self, token_key_id: TruncatedTokenKeyId, server: VoprfServer<Ristretto255>) {
         let mut keys = self.keys.lock().await;
         keys.insert(token_key_id, server);
     }
 
-    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<Ristretto255>> {
+    async fn get(&self, token_key_id: &TruncatedTokenKeyId) -> Option<VoprfServer<Ristretto255>> {
         self.keys.lock().await.get(token_key_id).cloned()
     }
 }
