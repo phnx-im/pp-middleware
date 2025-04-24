@@ -57,7 +57,8 @@ where
         let server = self.server().lock().await;
         let ks = self.key_store();
         let ns = self.nonce_store();
-        server.redeem_token(ks, ns, token.clone()).await.is_ok()
+        let res = server.redeem_token(ks, ns, token.clone()).await;
+        res.is_ok()
     }
 }
 

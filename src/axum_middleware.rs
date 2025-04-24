@@ -3,23 +3,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use axum::{
+    Extension,
     body::{Body, Bytes},
     http::{self, HeaderValue, Request},
     response::{IntoResponse, Response},
-    Extension,
 };
 use futures::future::BoxFuture;
 use hyper::{HeaderMap, StatusCode, Uri};
 use privacypass::{
+    Deserialize, NonceStore,
     auth::{
-        authenticate::{build_www_authenticate_header, TokenChallenge},
+        authenticate::{TokenChallenge, build_www_authenticate_header},
         authorize::parse_authorization_header,
     },
     batched_tokens_ristretto255::{
-        server::{serialize_public_key, BatchedKeyStore},
         TokenRequest,
+        server::{BatchedKeyStore, serialize_public_key},
     },
-    Deserialize, NonceStore,
 };
 use std::{
     sync::Arc,
@@ -73,8 +73,8 @@ where
     }
 
     fn call(&mut self, mut req: Request<Body>) -> Self::Future {
-        let not_ready_inner = self.inner.clone();
-        let mut ready_inner = std::mem::replace(&mut self.inner, not_ready_inner);
+        let mut inner = self.inner.clone();
+
         let state = self.state.clone();
 
         // Extract the authorization header from the request.
@@ -89,7 +89,7 @@ where
             Box::pin(async move {
                 if state.redeem_token(token).await {
                     // If the token is valid, then continue with the request.
-                    let future = ready_inner.call(req);
+                    let future = inner.call(req);
                     future.await
                 } else {
                     Ok(StatusCode::UNAUTHORIZED.into_response())
@@ -113,11 +113,12 @@ where
 }
 
 pub(crate) fn challenge(uri: &Uri) -> TokenChallenge {
+    let host = uri.host().unwrap_or_default();
     TokenChallenge::new(
         privacypass::TokenType::BatchedTokenRistretto255,
-        &uri.to_string(),
+        host,
         None,
-        &[uri.to_string()],
+        &[host.to_string()],
     )
 }
 

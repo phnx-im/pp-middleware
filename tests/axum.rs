@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use axum::{
-    routing::{get, post},
     Extension, Router,
+    routing::{get, post},
 };
 use privacypass::{
-    auth::{authenticate::parse_www_authenticate_header, authorize::build_authorization_header},
-    batched_tokens_ristretto255::{server::*, TokenResponse},
     Serialize,
+    auth::{authenticate::parse_www_authenticate_header, authorize::build_authorization_header},
+    batched_tokens_ristretto255::{TokenResponse, server::*},
 };
 use privacypass_middleware::{
     axum_middleware::*,
@@ -17,8 +17,8 @@ use privacypass_middleware::{
     state::PrivacyPassState,
 };
 use reqwest::{
-    header::{HeaderValue, CONTENT_TYPE},
     StatusCode,
+    header::{CONTENT_TYPE, HeaderValue},
 };
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
