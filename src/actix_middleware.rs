@@ -3,31 +3,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use actix_web::{
-    dev::{forward_ready, Response, Service, ServiceRequest, ServiceResponse, Transform},
+    Error, HttpRequest, HttpResponse, Responder,
+    dev::{Response, Service, ServiceRequest, ServiceResponse, Transform, forward_ready},
     error::{ErrorInternalServerError, ErrorUnauthorized},
     http::{
-        header::{self, HeaderValue},
         StatusCode,
+        header::{self, HeaderValue},
     },
     web::{self, Bytes, Data},
-    Error, HttpRequest, HttpResponse, Responder,
 };
 use futures_util::future::LocalBoxFuture;
-use std::{
-    future::{ready, Ready},
-    sync::Arc,
-};
-
 use privacypass::{
+    Deserialize, NonceStore, TokenType,
+    amortized_tokens::AmortizedBatchTokenRequest,
     auth::{
-        authenticate::{build_www_authenticate_header, TokenChallenge},
+        authenticate::{TokenChallenge, build_www_authenticate_header},
         authorize::parse_authorization_header,
     },
-    batched_tokens_ristretto255::{
-        server::{serialize_public_key, BatchedKeyStore},
-        TokenRequest,
+    common::{
+        private::{PrivateCipherSuite, serialize_public_key},
+        store::PrivateKeyStore,
     },
-    Deserialize, NonceStore,
+};
+use std::{
+    future::{Ready, ready},
+    sync::Arc,
 };
 
 use crate::{
@@ -39,11 +39,17 @@ use crate::{
 // 1. Middleware initialization, middleware factory gets called with
 //    next service in chain as parameter.
 // 2. Middleware's call method gets called with normal request.
-pub struct PrivacyPassLayer<KS, NS> {
+pub struct PrivacyPassLayer<KS, NS>
+where
+    KS: PrivateKeyStore + Send + Sync + 'static,
+{
     privacy_pass_state: Arc<PrivacyPassState<KS, NS>>,
 }
 
-impl<KS, NS> PrivacyPassLayer<KS, NS> {
+impl<KS, NS> PrivacyPassLayer<KS, NS>
+where
+    KS: PrivateKeyStore + Send + Sync + 'static,
+{
     pub fn new(privacy_pass_state: Data<PrivacyPassState<KS, NS>>) -> Self {
         Self {
             privacy_pass_state: privacy_pass_state.into_inner(),
@@ -60,7 +66,7 @@ where
     S::Future: 'static,
     B: 'static,
     Response<B>: From<HttpResponse>,
-    KS: BatchedKeyStore + Sync + Send + 'static,
+    KS: PrivateKeyStore + Sync + Send + 'static,
     NS: NonceStore + Sync + Send + 'static,
 {
     type Response = ServiceResponse<B>;
@@ -77,7 +83,10 @@ where
     }
 }
 
-pub struct PrivacyPassMiddleware<S, KS, NS> {
+pub struct PrivacyPassMiddleware<S, KS, NS>
+where
+    KS: PrivateKeyStore + Send + Sync + 'static,
+{
     service: S,
     privacy_pass_state: Arc<PrivacyPassState<KS, NS>>,
 }
@@ -88,7 +97,7 @@ where
     S::Future: 'static,
     B: 'static,
     Response<B>: From<HttpResponse>,
-    KS: BatchedKeyStore + Sync + Send + 'static,
+    KS: PrivateKeyStore + Sync + Send + 'static,
     NS: NonceStore + Sync + Send + 'static,
 {
     type Response = ServiceResponse<B>;
@@ -125,9 +134,9 @@ where
         } else {
             // If the token is not present, then issue a challenge.
             let public_key = state.public_key();
-            let token_key = serialize_public_key(*public_key);
+            let token_key = serialize_public_key::<KS::CS>(*public_key);
             let build_res = build_www_authenticate_header(
-                &challenge(&uri_to_http10(req.request().uri())),
+                &challenge(&uri_to_http10(req.request().uri()), KS::CS::token_type()),
                 &token_key,
                 None,
             );
@@ -153,17 +162,12 @@ where
     }
 }
 
-pub(crate) fn challenge(uri: &http::Uri) -> TokenChallenge {
-    TokenChallenge::new(
-        privacypass::TokenType::BatchedTokenRistretto255,
-        &uri.to_string(),
-        None,
-        &[uri.to_string()],
-    )
+pub(crate) fn challenge(uri: &http::Uri, token_type: TokenType) -> TokenChallenge {
+    TokenChallenge::new(token_type, &uri.to_string(), None, &[uri.to_string()])
 }
 
 pub async fn issue_token<
-    KS: BatchedKeyStore + Send + Sync + 'static,
+    KS: PrivateKeyStore + Send + Sync + 'static,
     NS: NonceStore + Send + Sync + 'static,
 >(
     body: Bytes,
@@ -176,7 +180,7 @@ pub async fn issue_token<
         return HttpResponse::BadRequest().finish();
     }
     // Deserialize the body as a TokenRequest
-    if let Ok(token_request) = TokenRequest::tls_deserialize(&mut body.as_ref()) {
+    if let Ok(token_request) = AmortizedBatchTokenRequest::tls_deserialize(&mut body.as_ref()) {
         // Make sure that at least one token was requested
         if token_request.nr() == 0 {
             return HttpResponse::BadRequest().finish();

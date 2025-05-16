@@ -2,12 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use actix_web::{rt, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{App, HttpResponse, HttpServer, Responder, rt, web};
 use http::{HeaderValue, StatusCode};
 use privacypass::{
-    auth::{authenticate::parse_www_authenticate_header, authorize::build_authorization_header},
-    batched_tokens_ristretto255::{server::*, TokenResponse},
     Serialize,
+    amortized_tokens::{AmortizedBatchTokenRequest, AmortizedBatchTokenResponse},
+    auth::{authenticate::parse_www_authenticate_header, authorize::build_authorization_header},
+    common::private::{PrivateCipherSuite, deserialize_public_key},
+    private_tokens::Ristretto255,
 };
 use privacypass_middleware::{
     actix_middleware::*,
@@ -20,8 +22,8 @@ use std::{sync::Arc, thread};
 ///  - GET /origin - a sample endpoint that requires authentication with
 ///    Privacy Pass
 ///  - POST /issuer - an endpoint that issues Privacy Pass tokens
-async fn run_server() -> std::io::Result<()> {
-    let ks = MemoryKeyStore::default();
+async fn run_server<CS: PrivateCipherSuite + Send + Sync + 'static>() -> std::io::Result<()> {
+    let ks = MemoryKeyStore::<CS>::new();
     let ns = MemoryNonceStore::default();
     let privacy_pass_state = PrivacyPassState::new(ks, ns).await;
     let privacy_pass_state_data = web::Data::new(privacy_pass_state);
@@ -36,7 +38,7 @@ async fn run_server() -> std::io::Result<()> {
             )
             .service(
                 web::resource("/issuer")
-                    .route(web::post().to(issue_token::<MemoryKeyStore, MemoryNonceStore>)),
+                    .route(web::post().to(issue_token::<MemoryKeyStore<CS>, MemoryNonceStore>)),
             )
             .app_data(privacy_pass_state_data.clone())
     })
@@ -59,7 +61,7 @@ async fn full_cycle_actix() {
 
     // Spawn the server
     thread::spawn(move || {
-        let server_future = run_server();
+        let server_future = run_server::<Ristretto255>();
         rt::System::new().block_on(server_future)
     });
 
@@ -88,14 +90,13 @@ async fn full_cycle_actix() {
     let token_challenge = challenge.token_challenge();
 
     // Instantiate the Privacy Pass client
-    let public_key = deserialize_public_key(challenge.token_key()).unwrap();
-
-    let client = privacypass::batched_tokens_ristretto255::client::Client::new(public_key);
+    let public_key = deserialize_public_key::<Ristretto255>(challenge.token_key()).unwrap();
 
     assert_eq!(challenge.max_age(), None);
 
     // Create a token request
-    let (token_request, token_states) = client.issue_token_request(token_challenge, nr).unwrap();
+    let (token_request, token_states) =
+        AmortizedBatchTokenRequest::<Ristretto255>::new(public_key, token_challenge, nr).unwrap();
 
     // Request a token
     let res = http_client
@@ -117,10 +118,11 @@ async fn full_cycle_actix() {
 
     // Process the token response
     let token_response_bytes = res.bytes().await.unwrap();
-    let token_response = TokenResponse::try_from_bytes(&token_response_bytes).unwrap();
+    let token_response =
+        AmortizedBatchTokenResponse::try_from_bytes(&token_response_bytes).unwrap();
 
     // Generate the tokens
-    let tokens = client.issue_tokens(&token_response, &token_states).unwrap();
+    let tokens = token_response.issue_tokens(&token_states).unwrap();
     assert_eq!(tokens.len(), nr as usize);
 
     // Redeem a token

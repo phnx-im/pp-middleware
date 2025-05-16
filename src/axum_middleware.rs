@@ -11,14 +11,15 @@ use axum::{
 use futures::future::BoxFuture;
 use hyper::{HeaderMap, StatusCode, Uri};
 use privacypass::{
-    Deserialize, NonceStore,
+    Deserialize, NonceStore, TokenType,
+    amortized_tokens::AmortizedBatchTokenRequest,
     auth::{
         authenticate::{TokenChallenge, build_www_authenticate_header},
         authorize::parse_authorization_header,
     },
-    batched_tokens_ristretto255::{
-        TokenRequest,
-        server::{BatchedKeyStore, serialize_public_key},
+    common::{
+        private::{PrivateCipherSuite, serialize_public_key},
+        store::PrivateKeyStore,
     },
 };
 use std::{
@@ -30,17 +31,26 @@ use tower::{Layer, Service};
 use crate::state::{PrivacyPassProvider, PrivacyPassState};
 
 #[derive(Clone)]
-pub struct PrivacyPassLayer<KS, NS> {
+pub struct PrivacyPassLayer<KS, NS>
+where
+    KS: PrivateKeyStore + Send + Sync + 'static,
+{
     privacy_pass_state: Arc<PrivacyPassState<KS, NS>>,
 }
 
-impl<KS, NS> PrivacyPassLayer<KS, NS> {
+impl<KS, NS> PrivacyPassLayer<KS, NS>
+where
+    KS: PrivateKeyStore + Send + Sync + 'static,
+{
     pub fn new(privacy_pass_state: Arc<PrivacyPassState<KS, NS>>) -> Self {
         Self { privacy_pass_state }
     }
 }
 
-impl<S, KS, NS> Layer<S> for PrivacyPassLayer<KS, NS> {
+impl<S, KS, NS> Layer<S> for PrivacyPassLayer<KS, NS>
+where
+    KS: PrivateKeyStore + Send + Sync + 'static,
+{
     type Service = PrivacyPassMiddleware<S, KS, NS>;
 
     fn layer(&self, inner: S) -> Self::Service {
@@ -52,7 +62,10 @@ impl<S, KS, NS> Layer<S> for PrivacyPassLayer<KS, NS> {
 }
 
 #[derive(Clone)]
-pub struct PrivacyPassMiddleware<S, KS, NS> {
+pub struct PrivacyPassMiddleware<S, KS, NS>
+where
+    KS: PrivateKeyStore + Send + Sync + 'static,
+{
     inner: S,
     state: Arc<PrivacyPassState<KS, NS>>,
 }
@@ -61,8 +74,9 @@ impl<S, KS, NS> Service<Request<Body>> for PrivacyPassMiddleware<S, KS, NS>
 where
     S: Service<Request<Body>, Response = Response> + Clone + Send + 'static,
     S::Future: Send + 'static,
-    KS: BatchedKeyStore + Sync + Send + 'static,
+    KS: PrivateKeyStore + Sync + Send + 'static,
     NS: NonceStore + Sync + Send + 'static,
+    <KS as PrivateKeyStore>::CS: Send + Sync,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -98,8 +112,12 @@ where
         } else {
             // If the token is not present, then issue a challenge.
             let public_key = state.public_key();
-            let token_key = serialize_public_key(*public_key);
-            let build_res = build_www_authenticate_header(&challenge(req.uri()), &token_key, None);
+            let token_key = serialize_public_key::<KS::CS>(*public_key);
+            let build_res = build_www_authenticate_header(
+                &challenge(req.uri(), KS::CS::token_type()),
+                &token_key,
+                None,
+            );
             if let Ok((header_name, header_value)) = build_res {
                 let mut response = ().into_response();
                 response.headers_mut().insert(header_name, header_value);
@@ -112,18 +130,13 @@ where
     }
 }
 
-pub(crate) fn challenge(uri: &Uri) -> TokenChallenge {
+pub(crate) fn challenge(uri: &Uri, token_type: TokenType) -> TokenChallenge {
     let host = uri.host().unwrap_or_default();
-    TokenChallenge::new(
-        privacypass::TokenType::BatchedTokenRistretto255,
-        host,
-        None,
-        &[host.to_string()],
-    )
+    TokenChallenge::new(token_type, host, None, &[host.to_string()])
 }
 
 pub async fn issue_token<
-    KS: BatchedKeyStore + Send + Sync + 'static,
+    KS: PrivateKeyStore + Send + Sync + 'static,
     NS: NonceStore + Send + Sync + 'static,
 >(
     Extension(privacy_pass_state): Extension<Arc<PrivacyPassState<KS, NS>>>,
@@ -136,7 +149,7 @@ pub async fn issue_token<
         return StatusCode::BAD_REQUEST.into_response();
     }
     // Deserialize the body as a TokenRequest
-    if let Ok(token_request) = TokenRequest::tls_deserialize(&mut body.as_ref()) {
+    if let Ok(token_request) = AmortizedBatchTokenRequest::tls_deserialize(&mut body.as_ref()) {
         // Make sure that at least one token was requested
         if token_request.nr() == 0 {
             return StatusCode::BAD_REQUEST.into_response();
