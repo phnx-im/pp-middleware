@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use async_trait::async_trait;
-use privacypass::batched_tokens_ristretto255::server::Server;
+use privacypass::{
+    amortized_tokens::{AmortizedBatchTokenRequest, AmortizedToken, server::Server},
+    common::{errors::IssueTokenResponseError, private::PublicKey, store::PrivateKeyStore},
+};
 
 use tokio::sync::Mutex;
 
-use privacypass::{
-    batched_tokens_ristretto255::{server::*, *},
-    NonceStore, Serialize,
-};
+use privacypass::{NonceStore, Serialize};
 
 /// This is a trait that provides a set of methods for issuing and redeeming
 /// privacy-pass tokens. The trait has two generic parameters: KS and NS. KS is
@@ -20,14 +20,14 @@ use privacypass::{
 #[async_trait]
 pub trait PrivacyPassProvider<KS, NS>
 where
-    KS: BatchedKeyStore + Send + Sync + 'static,
+    KS: PrivateKeyStore + Send + Sync + 'static,
     NS: NonceStore + Send + Sync + 'static,
 {
     /// This method returns a reference to the public key of the server.
-    fn public_key(&self) -> &PublicKey;
+    fn public_key(&self) -> &PublicKey<KS::CS>;
 
     /// This method returns a reference to the server.
-    fn server(&self) -> &Mutex<Server>;
+    fn server(&self) -> &Mutex<Server<KS::CS>>;
 
     /// This method returns a reference to the keystore.
     fn key_store(&self) -> &KS;
@@ -38,7 +38,7 @@ where
     /// This method is used to issue a token response to a token request.
     async fn issue_token_response(
         &self,
-        token_request: TokenRequest,
+        token_request: AmortizedBatchTokenRequest<KS::CS>,
     ) -> Result<Vec<u8>, IssueTokenResponseError> {
         let server = self.server().lock();
         let ks = self.key_store();
@@ -53,7 +53,7 @@ where
     }
 
     /// This method is used to redeem a token.
-    async fn redeem_token(&self, token: BatchedToken) -> bool {
+    async fn redeem_token(&self, token: AmortizedToken<KS::CS>) -> bool {
         let server = self.server().lock().await;
         let ks = self.key_store();
         let ns = self.nonce_store();
@@ -64,24 +64,27 @@ where
 
 /// This is a struct that implements the PrivacyPassProvider trait. It is used
 /// to store the state of the server.
-pub struct PrivacyPassState<KS, NS> {
+pub struct PrivacyPassState<KS, NS>
+where
+    KS: PrivateKeyStore + Send + Sync + 'static,
+{
     key_store: KS,
     nonce_store: NS,
-    server: Mutex<Server>,
-    public_key: PublicKey,
+    server: Mutex<Server<KS::CS>>,
+    public_key: PublicKey<KS::CS>,
 }
 
 #[async_trait]
 impl<KS, NS> PrivacyPassProvider<KS, NS> for PrivacyPassState<KS, NS>
 where
-    KS: BatchedKeyStore + 'static,
+    KS: PrivateKeyStore + Send + Sync + 'static,
     NS: NonceStore + 'static,
 {
-    fn public_key(&self) -> &PublicKey {
+    fn public_key(&self) -> &PublicKey<KS::CS> {
         &self.public_key
     }
 
-    fn server(&self) -> &Mutex<Server> {
+    fn server(&self) -> &Mutex<Server<KS::CS>> {
         &self.server
     }
 
@@ -96,7 +99,7 @@ where
 
 impl<KS, NS> PrivacyPassState<KS, NS>
 where
-    KS: BatchedKeyStore + Default + 'static,
+    KS: PrivateKeyStore + Send + Sync + 'static,
     NS: NonceStore + Default + 'static,
 {
     /// This method is used to create a new instance of the PrivacyPassState
